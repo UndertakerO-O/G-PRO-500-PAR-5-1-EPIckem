@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   frontend:
+    if: github.repository == 'UndertakerO-O/G-PRO-500-PAR-5-1-EPIckem'
     name: Frontend
     runs-on: ubuntu-latest
 
@@ -40,6 +41,7 @@ jobs:
         run: npm run build
 
   backend:
+    if: github.repository == 'UndertakerO-O/G-PRO-500-PAR-5-1-EPIckem'
     name: Backend and Prisma
     runs-on: ubuntu-latest
 
@@ -83,7 +85,7 @@ jobs:
       - backend
 
     # Synchronisation uniquement après un push réussi sur main
-    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: success() && github.repository == 'UndertakerO-O/G-PRO-500-PAR-5-1-EPIckem' && github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout repository

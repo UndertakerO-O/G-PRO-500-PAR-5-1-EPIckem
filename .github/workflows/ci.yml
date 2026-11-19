@@ -13,44 +13,69 @@ jobs:
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: frontend
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run test:unit
-      - run: npm run build
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Build
+        run: npm run build
 
   backend:
     name: Backend and Prisma
     runs-on: ubuntu-latest
+
     env:
       DATABASE_URL: postgresql://ci:ci@localhost:5432/epickem?schema=public
+
     defaults:
       run:
         working-directory: backend
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: backend/package-lock.json
-      - run: npm ci
-      - run: npm run lint
-      - run: npm test
-      - run: npm run build
-      - run: npx prisma validate
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
 
   sync-repository:
-    name: Sync to deployment repository
+    name: Sync to school repository
     runs-on: ubuntu-latest
 
     needs:
@@ -61,17 +86,20 @@ jobs:
     if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
-      - name: Check out repository
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Push to destination repository
+      - name: Configure SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.GIT_SSH_PRIVATE_KEY }}
+          
+      - name: Push to school repository
         env:
-          TOKEN: ${{ secrets.SCHOOL_REPO_TOKEN }}
+          MIRROR_URL: ${{ vars.MIRROR_URL }}
         run: |
-          git remote add destination \
-            https://x-access-token:${TOKEN}@github.com/EpitechPGE3-2026/G-PRO-500-PAR-5-1-professionalwork-15.git
-
-          git push destination HEAD:main
+          git remote add school "$MIRROR_URL"
+          git push --force school HEAD:refs/heads/main

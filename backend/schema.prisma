@@ -1,0 +1,451 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  PLAYER
+  SPECTATOR
+}
+
+enum TournamentVisibility {
+  PUBLIC
+  UNLISTED
+  PRIVATE
+}
+
+enum TournamentSourceType {
+  INTERNAL
+  START_GG
+}
+
+enum TournamentStatus {
+  DRAFT
+  REGISTRATION_OPEN
+  REGISTRATION_CLOSED
+  LIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum LocationType {
+  ONLINE
+  ONSITE
+  HYBRID
+}
+
+enum RegistrationType {
+  SOLO
+  TEAM
+}
+
+enum RegistrationStatus {
+  PENDING
+  CONFIRMED
+  WAITLISTED
+  CANCELLED
+  DISQUALIFIED
+}
+
+enum StageFormat {
+  SINGLE_ELIMINATION
+  ROUND_ROBIN
+}
+
+enum StageStatus {
+  DRAFT
+  SCHEDULED
+  LIVE
+  COMPLETED
+}
+
+enum MatchStatus {
+  PENDING
+  READY
+  LIVE
+  COMPLETED
+  FORFEITED
+  CANCELLED
+}
+
+enum MatchSideResult {
+  PENDING
+  WIN
+  LOSS
+  DRAW
+  FORFEIT
+}
+
+enum PredictionStatus {
+  OPEN
+  LOCKED
+  RESOLVED
+  CANCELLED
+}
+
+enum PickemTemplate {
+  MOST_SELECTED
+  TOP_STAT
+  BOOLEAN
+}
+
+enum PickemStatus {
+  DRAFT
+  OPEN
+  LOCKED
+  RESOLVED
+  CANCELLED
+}
+
+enum AuditAction {
+  SCORE_RECORDED
+  SCORE_CORRECTED
+  MATCH_FORFEITED
+  PICKEM_CREATED
+  PICKEM_RESOLVED
+  PICKEM_CANCELLED
+  TOURNAMENT_IMPORTED
+  IMPORT_SYNCED
+}
+
+model User {
+  id               String             @id @default(cuid())
+  email            String             @unique
+  displayName      String
+  passwordHash     String
+  role             UserRole           @default(SPECTATOR)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  memberships      TeamMember[]
+  captainedTeams   Team[]             @relation("TeamCaptain")
+  registrations    Registration[]
+  predictions      Prediction[]
+  pickemAnswers    PickemAnswer[]
+  leaderboard      LeaderboardEntry[]
+  auditLogs        AuditLog[]         @relation("AuditActor")
+  createdTournaments Tournament[]     @relation("TournamentCreator")
+}
+
+model Game {
+  id          String                @id @default(cuid())
+  name        String                @unique
+  description String?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  statistics  StatisticDefinition[]
+  tournaments Tournament[]
+}
+
+model StatisticDefinition {
+  id          String   @id @default(cuid())
+  gameId      String
+  key         String
+  label       String
+  valueType   String
+  isPickemUsable Boolean @default(true)
+  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  statEntries StatEntry[]
+
+  @@unique([gameId, key])
+}
+
+model Tournament {
+  id                String               @id @default(cuid())
+  gameId            String
+  createdById       String
+  externalSourceId  String?
+  externalId        String?
+  name              String
+  slug              String               @unique
+  description       String?
+  rules             String?
+  startsAt          DateTime
+  endsAt            DateTime?
+  locationType      LocationType         @default(ONLINE)
+  locationLabel     String?
+  visibility        TournamentVisibility @default(PUBLIC)
+  sourceType        TournamentSourceType @default(INTERNAL)
+  status            TournamentStatus    @default(DRAFT)
+  registrationType  RegistrationType
+  minTeamSize       Int?
+  maxTeamSize       Int?
+  capacity           Int?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  game              Game                 @relation(fields: [gameId], references: [id])
+  createdBy         User                 @relation("TournamentCreator", fields: [createdById], references: [id])
+  externalSource    ExternalSource?      @relation(fields: [externalSourceId], references: [id])
+  stages            Stage[]
+  registrations     Registration[]
+  pickemQuestions   PickemQuestion[]
+  leaderboard       LeaderboardEntry[]
+  auditLogs         AuditLog[]
+  importSyncs       ImportSync[]
+
+  @@unique([externalSourceId, externalId])
+  @@index([gameId, status])
+}
+
+model ExternalSource {
+  id          String       @id @default(cuid())
+  connector   String       @unique
+  displayName String
+  baseUrl     String
+  enabled     Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  tournaments Tournament[]
+  syncs       ImportSync[]
+}
+
+model ImportSync {
+  id               String          @id @default(cuid())
+  tournamentId     String
+  externalSourceId String
+  status           String
+  startedAt        DateTime        @default(now())
+  finishedAt       DateTime?
+  errorMessage     String?
+  tournament       Tournament      @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  externalSource   ExternalSource  @relation(fields: [externalSourceId], references: [id])
+}
+
+model Team {
+  id            String       @id @default(cuid())
+  name          String
+  captainId     String
+  inviteCode    String       @unique
+  createdAt     DateTime     @default(now())
+  captain       User         @relation("TeamCaptain", fields: [captainId], references: [id])
+  members       TeamMember[]
+  registrations Registration[]
+}
+
+model TeamMember {
+  teamId   String
+  userId   String
+  joinedAt DateTime @default(now())
+  team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([teamId, userId])
+}
+
+model Registration {
+  id           String             @id @default(cuid())
+  tournamentId String
+  userId       String?
+  teamId       String?
+  seed         Int?
+  status       RegistrationStatus @default(PENDING)
+  createdAt    DateTime           @default(now())
+  tournament   Tournament         @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  user         User?              @relation(fields: [userId], references: [id])
+  team         Team?              @relation(fields: [teamId], references: [id])
+  matchSides   MatchSide[]
+  poolStandings PoolStanding[]
+
+  @@unique([tournamentId, userId])
+  @@unique([tournamentId, teamId])
+}
+
+model Stage {
+  id                String      @id @default(cuid())
+  tournamentId      String
+  name              String
+  position          Int
+  format            StageFormat
+  status            StageStatus @default(DRAFT)
+  bestOf            Int         @default(1)
+  pointsWin         Int         @default(3)
+  pointsDraw        Int         @default(1)
+  pointsLoss        Int         @default(0)
+  tiebreakerRules   Json?
+  startsAt          DateTime?
+  tournament        Tournament  @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  pools             Pool[]
+  matches           Match[]
+  qualificationRules QualificationRule[]
+
+  @@unique([tournamentId, position])
+}
+
+model Pool {
+  id       String         @id @default(cuid())
+  stageId  String
+  name     String
+  position Int
+  stage    Stage          @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  standings PoolStanding[]
+  matches  Match[]
+
+  @@unique([stageId, position])
+}
+
+model PoolStanding {
+  poolId         String       
+  registrationId String
+  played         Int          @default(0)
+  wins           Int          @default(0)
+  draws          Int          @default(0)
+  losses         Int          @default(0)
+  points         Int          @default(0)
+  rank           Int?
+  pool           Pool         @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  registration   Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+
+  @@id([poolId, registrationId])
+}
+
+model QualificationRule {
+  id            String @id @default(cuid())
+  stageId       String
+  sourcePoolId  String?
+  targetStageId String?
+  maxRank       Int
+  targetSlot    Int?
+  stage         Stage  @relation(fields: [stageId], references: [id], onDelete: Cascade)
+}
+
+model Match {
+  id          String      @id @default(cuid())
+  stageId     String
+  poolId      String?
+  round       Int
+  position    Int
+  bestOf      Int         @default(1)
+  scheduledAt DateTime?
+  startedAt   DateTime?
+  endedAt     DateTime?
+  status      MatchStatus @default(PENDING)
+  version     Int         @default(1)
+  stage       Stage       @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  pool        Pool?       @relation(fields: [poolId], references: [id])
+  sides       MatchSide[]
+  games       MatchGame[]
+  predictions Prediction[]
+  auditLogs   AuditLog[]
+
+  @@unique([stageId, round, position])
+  @@index([stageId, scheduledAt])
+}
+
+model MatchSide {
+  id             String          @id @default(cuid())
+  matchId        String
+  registrationId String?
+  slot           Int
+  score          Int             @default(0)
+  result         MatchSideResult @default(PENDING)
+  match          Match           @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  registration   Registration?   @relation(fields: [registrationId], references: [id])
+
+  @@unique([matchId, slot])
+}
+
+model MatchGame {
+  id          String      @id @default(cuid())
+  matchId     String
+  gameNumber  Int
+  mapName     String?
+  startedAt   DateTime?
+  endedAt     DateTime?
+  winnerSide  Int?
+  match       Match       @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  statEntries StatEntry[]
+
+  @@unique([matchId, gameNumber])
+}
+
+model StatEntry {
+  id                    String              @id @default(cuid())
+  matchGameId           String
+  statisticDefinitionId String
+  registrationId        String?
+  userId                String?
+  value                 Json
+  matchGame             MatchGame           @relation(fields: [matchGameId], references: [id], onDelete: Cascade)
+  statisticDefinition   StatisticDefinition @relation(fields: [statisticDefinitionId], references: [id])
+}
+
+model Prediction {
+  id              String           @id @default(cuid())
+  matchId         String
+  userId          String
+  predictedWinnerRegistrationId String?
+  predictedHomeScore Int?
+  predictedAwayScore Int?
+  status          PredictionStatus @default(OPEN)
+  pointsAwarded   Int              @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  match           Match            @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, userId])
+  @@index([userId, status])
+}
+
+model PickemQuestion {
+  id              String        @id @default(cuid())
+  tournamentId    String
+  title           String
+  description     String?
+  template        PickemTemplate
+  resolutionSpec  Json
+  options         Json?
+  correctAnswer   Json?
+  points          Int
+  closesAt        DateTime
+  status          PickemStatus  @default(DRAFT)
+  resolvedAt      DateTime?
+  cancelledReason String?
+  tournament      Tournament    @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  answers         PickemAnswer[]
+}
+
+model PickemAnswer {
+  id          String         @id @default(cuid())
+  questionId  String
+  userId      String
+  answer      Json
+  isCorrect   Boolean?
+  pointsAwarded Int           @default(0)
+  createdAt   DateTime       @default(now())
+  question    PickemQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, userId])
+}
+
+model LeaderboardEntry {
+  tournamentId String
+  userId       String
+  points       Int        @default(0)
+  rank         Int?
+  updatedAt    DateTime   @updatedAt
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([tournamentId, userId])
+}
+
+model AuditLog {
+  id           String      @id @default(cuid())
+  tournamentId String
+  matchId      String?
+  actorId      String?
+  action       AuditAction
+  before       Json?
+  after        Json?
+  createdAt    DateTime    @default(now())
+  tournament   Tournament  @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  match        Match?      @relation(fields: [matchId], references: [id])
+  actor        User?       @relation("AuditActor", fields: [actorId], references: [id])
+
+  @@index([tournamentId, createdAt])
+}
